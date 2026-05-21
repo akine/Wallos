@@ -220,7 +220,16 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       $print[$id]['payment_method_id'] = $paymentMethodId;
       $print[$id]['category_id'] = $subscription['category_id'];
       $print[$id]['payer_user_id'] = $subscription['payer_user_id'];
-      $print[$id]['price'] = floatval($subscription['price']);
+      $hasVariablePrice = !empty($subscription['has_variable_price']);
+      $effectivePrice = floatval($subscription['price']);
+      if ($hasVariablePrice) {
+        $eff = getEffectivePriceForMonth($subscription['id'], date('Y-m'), $db);
+        if ($eff !== null) {
+          $effectivePrice = $eff;
+        }
+      }
+      $print[$id]['price'] = $effectivePrice;
+      $print[$id]['has_variable_price'] = $hasVariablePrice ? 1 : 0;
       $print[$id]['progress'] = getSubscriptionProgress($cycle, $frequency, $subscription['next_payment']);
       $print[$id]['inactive'] = $subscription['inactive'];
       $print[$id]['url'] = $subscription['url'];
@@ -231,7 +240,7 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
         $print[$id]['price'] = getPriceConverted($print[$id]['price'], $currencyId, $db);
         $print[$id]['currency_code'] = $currencies[$mainCurrencyId]['code'];
       }
-      if (isset($settings['showMonthlyPrice']) && $settings['showMonthlyPrice'] === 'true') {
+      if (isset($settings['showMonthlyPrice']) && $settings['showMonthlyPrice'] === 'true' && !$hasVariablePrice) {
         $print[$id]['price'] = getPricePerMonth($cycle, $frequency, $print[$id]['price']);
       }
       if (isset($settings['showOriginalPrice']) && $settings['showOriginalPrice'] === 'true') {
@@ -318,6 +327,22 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
         }
         ?>
       </select>
+    </div>
+
+    <div class="form-group">
+      <div class="inline height50">
+        <input type="checkbox" id="has_variable_price" name="has_variable_price"
+          onchange="togglePriceHistorySection()">
+        <label for="has_variable_price">Variable monthly price (electricity, mobile, etc.)</label>
+      </div>
+      <div id="price-history-section" class="form-group" style="display:none;">
+        <label>Monthly actuals (overrides base price for that month)</label>
+        <input type="hidden" id="price_history" name="price_history" value="[]">
+        <div id="price-history-rows"></div>
+        <button type="button" class="button secondary-button" onclick="addPriceHistoryRow()">
+          <i class="fa-solid fa-circle-plus"></i> Add month
+        </button>
+      </div>
     </div>
 
     <div class="form-group">

@@ -244,6 +244,8 @@ $notifyDaysBefore = $_POST['notify_days_before'];
 $inactive = isset($_POST['inactive']) ? true : false;
 $cancellationDate = $_POST['cancellation_date'] ?? null;
 $replacementSubscriptionId = $_POST['replacement_subscription_id'];
+$hasVariablePrice = isset($_POST['has_variable_price']) ? 1 : 0;
+$priceHistoryJson = $_POST['price_history'] ?? '';
 
 if ($replacementSubscriptionId == 0 || $inactive == 0) {
     $replacementSubscriptionId = null;
@@ -269,15 +271,15 @@ if ($logoUrl !== "") {
 
 if (!$isEdit) {
     $sql = "INSERT INTO subscriptions (
-                        name, logo, price, currency_id, next_payment, cycle, frequency, notes, 
-                        payment_method_id, payer_user_id, category_id, notify, inactive, url, 
+                        name, logo, price, currency_id, next_payment, cycle, frequency, notes,
+                        payment_method_id, payer_user_id, category_id, notify, inactive, url,
                         notify_days_before, user_id, cancellation_date, replacement_subscription_id,
-                        auto_renew, start_date
+                        auto_renew, start_date, has_variable_price
                     ) VALUES (
-                        :name, :logo, :price, :currencyId, :nextPayment, :cycle, :frequency, :notes, 
-                        :paymentMethodId, :payerUserId, :categoryId, :notify, :inactive, :url, 
+                        :name, :logo, :price, :currencyId, :nextPayment, :cycle, :frequency, :notes,
+                        :paymentMethodId, :payerUserId, :categoryId, :notify, :inactive, :url,
                         :notifyDaysBefore, :userId, :cancellationDate, :replacement_subscription_id,
-                        :autoRenew, :startDate
+                        :autoRenew, :startDate, :hasVariablePrice
                     )";
 } else {
     $id = $_POST['id'];
@@ -296,10 +298,11 @@ if (!$isEdit) {
                         category_id = :categoryId, 
                         notify = :notify, 
                         inactive = :inactive, 
-                        url = :url, 
-                        notify_days_before = :notifyDaysBefore, 
-                        cancellation_date = :cancellationDate, 
-                        replacement_subscription_id = :replacement_subscription_id";
+                        url = :url,
+                        notify_days_before = :notifyDaysBefore,
+                        cancellation_date = :cancellationDate,
+                        replacement_subscription_id = :replacement_subscription_id,
+                        has_variable_price = :hasVariablePrice";
 
     if ($logo != "") {
         $sql .= ", logo = :logo";
@@ -334,8 +337,37 @@ if ($isEdit) {
 }
 $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
 $stmt->bindParam(':replacement_subscription_id', $replacementSubscriptionId, SQLITE3_INTEGER);
+$stmt->bindParam(':hasVariablePrice', $hasVariablePrice, SQLITE3_INTEGER);
 
 if ($stmt->execute()) {
+    $subscriptionId = $isEdit ? intval($id) : $db->lastInsertRowID();
+
+    if ($priceHistoryJson !== '') {
+        $entries = json_decode($priceHistoryJson, true);
+        if (is_array($entries)) {
+            $del = $db->prepare("DELETE FROM subscription_price_history WHERE subscription_id = :sid");
+            $del->bindParam(':sid', $subscriptionId, SQLITE3_INTEGER);
+            $del->execute();
+
+            $ins = $db->prepare("INSERT INTO subscription_price_history (subscription_id, period, price, note)
+                                 VALUES (:sid, :period, :price, :note)");
+            foreach ($entries as $entry) {
+                $period = $entry['period'] ?? '';
+                if (!preg_match('/^\d{4}-\d{2}$/', $period)) {
+                    continue;
+                }
+                $entryPrice = floatval($entry['price'] ?? 0);
+                $entryNote = isset($entry['note']) ? validate($entry['note']) : '';
+                $ins->bindParam(':sid', $subscriptionId, SQLITE3_INTEGER);
+                $ins->bindParam(':period', $period, SQLITE3_TEXT);
+                $ins->bindParam(':price', $entryPrice, SQLITE3_FLOAT);
+                $ins->bindParam(':note', $entryNote, SQLITE3_TEXT);
+                $ins->execute();
+                $ins->reset();
+            }
+        }
+    }
+
     $success['status'] = "Success";
     $text = $isEdit ? "updated" : "added";
     $success['message'] = translate('subscription_' . $text . '_successfuly', $i18n);

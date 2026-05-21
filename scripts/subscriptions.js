@@ -50,6 +50,10 @@ function resetForm() {
   const deleteButton = document.querySelector("#deletesub");
   deleteButton.style = 'display: none';
   deleteButton.removeAttribute("onClick");
+  clearPriceHistoryRows();
+  const hasVariablePrice = document.querySelector("#has_variable_price");
+  if (hasVariablePrice) hasVariablePrice.checked = false;
+  togglePriceHistorySection();
 }
 
 function fillEditFormFields(subscription) {
@@ -127,6 +131,16 @@ function fillEditFormFields(subscription) {
   const deleteButton = document.querySelector("#deletesub");
   deleteButton.style = 'display: block';
   deleteButton.setAttribute("onClick", `deleteSubscription(event, ${subscription.id})`);
+
+  const hasVariablePrice = document.querySelector("#has_variable_price");
+  if (hasVariablePrice) {
+    hasVariablePrice.checked = !!subscription.has_variable_price;
+  }
+  clearPriceHistoryRows();
+  if (Array.isArray(subscription.price_history)) {
+    subscription.price_history.forEach(entry => addPriceHistoryRow(entry));
+  }
+  togglePriceHistorySection();
 
   const modal = document.getElementById('subscription-form');
   modal.classList.add("is-open");
@@ -524,6 +538,8 @@ document.addEventListener('DOMContentLoaded', function () {
     e.preventDefault();
 
     submitButton.disabled = true;
+
+    syncPriceHistoryHiddenField();
 
     const cycleVal = document.querySelector("#cycle")?.value;
     if (cycleVal === "5") {
@@ -979,3 +995,64 @@ window.addEventListener('load', () => {
     swipeHintAnimation();
   }
 });
+
+function togglePriceHistorySection() {
+  const checkbox = document.querySelector("#has_variable_price");
+  const section = document.querySelector("#price-history-section");
+  if (!checkbox || !section) return;
+  section.style.display = checkbox.checked ? "block" : "none";
+}
+
+function clearPriceHistoryRows() {
+  const container = document.querySelector("#price-history-rows");
+  if (container) container.innerHTML = "";
+  const hidden = document.querySelector("#price_history");
+  if (hidden) hidden.value = "[]";
+}
+
+function addPriceHistoryRow(entry) {
+  const container = document.querySelector("#price-history-rows");
+  if (!container) return;
+  const period = entry && entry.period ? entry.period : new Date().toISOString().slice(0, 7);
+  const price = entry && entry.price !== undefined ? entry.price : "";
+  const note = entry && entry.note ? entry.note : "";
+
+  const row = document.createElement("div");
+  row.className = "price-history-row form-group-inline";
+  row.innerHTML = `
+    <input type="month" class="price-history-period" value="${period}">
+    <input type="number" step="0.01" class="price-history-price" placeholder="Amount" value="${price}">
+    <input type="text" class="price-history-note" placeholder="Note (optional)" value="${escapeHtmlAttr(note)}">
+    <button type="button" class="image-button medium" onclick="this.parentElement.remove()" title="Remove">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  `;
+  container.appendChild(row);
+}
+
+function escapeHtmlAttr(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+function syncPriceHistoryHiddenField() {
+  const hidden = document.querySelector("#price_history");
+  if (!hidden) return;
+  const checkbox = document.querySelector("#has_variable_price");
+  if (!checkbox || !checkbox.checked) {
+    hidden.value = "[]";
+    return;
+  }
+  const rows = document.querySelectorAll("#price-history-rows .price-history-row");
+  const entries = [];
+  rows.forEach(row => {
+    const period = row.querySelector(".price-history-period")?.value || "";
+    const priceStr = row.querySelector(".price-history-price")?.value || "";
+    const note = row.querySelector(".price-history-note")?.value || "";
+    if (!/^\d{4}-\d{2}$/.test(period)) return;
+    if (priceStr === "") return;
+    entries.push({ period, price: parseFloat(priceStr), note });
+  });
+  hidden.value = JSON.stringify(entries);
+}

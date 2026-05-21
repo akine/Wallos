@@ -20,6 +20,29 @@ function getPricePerMonth($cycle, $frequency, $price)
     }
 }
 
+function getEffectivePriceForMonth($subscriptionId, $yearMonth, $database)
+{
+    $stmt = $database->prepare("SELECT price FROM subscription_price_history
+                                WHERE subscription_id = :sid AND period = :p");
+    $stmt->bindParam(':sid', $subscriptionId, SQLITE3_INTEGER);
+    $stmt->bindParam(':p', $yearMonth, SQLITE3_TEXT);
+    $row = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+    if ($row) {
+        return floatval($row['price']);
+    }
+
+    $stmt = $database->prepare("SELECT price FROM subscription_price_history
+                                WHERE subscription_id = :sid
+                                ORDER BY period DESC LIMIT 1");
+    $stmt->bindParam(':sid', $subscriptionId, SQLITE3_INTEGER);
+    $row = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+    if ($row) {
+        return floatval($row['price']);
+    }
+
+    return null;
+}
+
 function getPriceConverted($price, $currency, $database, $userId)
 {
     $query = "SELECT rate FROM currencies WHERE id = :currency AND user_id = :userId";
@@ -115,7 +138,7 @@ $totalSavingsPerMonth = 0;
 $totalCostsInReplacementsPerMonth = 0;
 
 $statsSubtitleParts = [];
-$query = "SELECT name, price, logo, frequency, cycle, currency_id, next_payment, payer_user_id, category_id, payment_method_id, inactive, replacement_subscription_id FROM subscriptions";
+$query = "SELECT id, name, price, logo, frequency, cycle, currency_id, next_payment, payer_user_id, category_id, payment_method_id, inactive, replacement_subscription_id, has_variable_price FROM subscriptions";
 $conditions = [];
 $params = [];
 
@@ -192,8 +215,20 @@ if ($result) {
             $paymentMethods[$paymentMethodId]['count'] += 1;
             $inactive = $subscription['inactive'];
             $replacementSubscriptionId = $subscription['replacement_subscription_id'];
-            $originalSubscriptionPrice = getPriceConverted($price, $currency, $db, $userId);
-            $price = getPricePerMonth($cycle, $frequency, $originalSubscriptionPrice);
+            $hasVariablePrice = !empty($subscription['has_variable_price']);
+            if ($hasVariablePrice) {
+                $effective = getEffectivePriceForMonth($subscription['id'], date('Y-m'), $db);
+                if ($effective !== null) {
+                    $originalSubscriptionPrice = getPriceConverted($effective, $currency, $db, $userId);
+                    $price = $originalSubscriptionPrice;
+                } else {
+                    $originalSubscriptionPrice = getPriceConverted($price, $currency, $db, $userId);
+                    $price = getPricePerMonth($cycle, $frequency, $originalSubscriptionPrice);
+                }
+            } else {
+                $originalSubscriptionPrice = getPriceConverted($price, $currency, $db, $userId);
+                $price = getPricePerMonth($cycle, $frequency, $originalSubscriptionPrice);
+            }
 
             if ($inactive == 0) {
                 if ($cycle != 5) {

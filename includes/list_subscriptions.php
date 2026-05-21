@@ -52,6 +52,29 @@ function getSubscriptionProgress($cycle, $frequency, $next_payment)
     return floor($subscriptionProgress);
 }
 
+function getEffectivePriceForMonth($subscriptionId, $yearMonth, $database)
+{
+    $stmt = $database->prepare("SELECT price FROM subscription_price_history
+                                WHERE subscription_id = :sid AND period = :p");
+    $stmt->bindParam(':sid', $subscriptionId, SQLITE3_INTEGER);
+    $stmt->bindParam(':p', $yearMonth, SQLITE3_TEXT);
+    $row = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+    if ($row) {
+        return floatval($row['price']);
+    }
+
+    $stmt = $database->prepare("SELECT price FROM subscription_price_history
+                                WHERE subscription_id = :sid
+                                ORDER BY period DESC LIMIT 1");
+    $stmt->bindParam(':sid', $subscriptionId, SQLITE3_INTEGER);
+    $row = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+    if ($row) {
+        return floatval($row['price']);
+    }
+
+    return null;
+}
+
 function getPricePerMonth($cycle, $frequency, $price)
 {
     switch ($cycle) {

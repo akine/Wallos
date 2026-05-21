@@ -33,6 +33,22 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
             $subscriptionData['notify_days_before'] = $row['notify_days_before'];
             $subscriptionData['cancellation_date'] = $row['cancellation_date'];
             $subscriptionData['replacement_subscription_id'] = $row['replacement_subscription_id'];
+            $subscriptionData['has_variable_price'] = isset($row['has_variable_price']) ? intval($row['has_variable_price']) : 0;
+
+            $historyQuery = "SELECT period, price, note FROM subscription_price_history
+                             WHERE subscription_id = :sid ORDER BY period ASC";
+            $historyStmt = $db->prepare($historyQuery);
+            $historyStmt->bindParam(':sid', $subscriptionId, SQLITE3_INTEGER);
+            $historyResult = $historyStmt->execute();
+            $history = [];
+            while ($hRow = $historyResult->fetchArray(SQLITE3_ASSOC)) {
+                $history[] = [
+                    'period' => $hRow['period'],
+                    'price' => floatval($hRow['price']),
+                    'note' => $hRow['note'] ?? '',
+                ];
+            }
+            $subscriptionData['price_history'] = $history;
 
             $subscriptionJson = json_encode($subscriptionData);
             header('Content-Type: application/json');
