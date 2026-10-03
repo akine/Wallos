@@ -5,6 +5,7 @@ require_once 'includes/getdbkeys.php';
 require_once 'includes/logo_theme_variant.php';
 
 include_once 'includes/list_subscriptions.php';
+require_once 'includes/variable_pricing.php';
 
 $sort = "next_payment";
 $sortOrder = $sort;
@@ -213,6 +214,7 @@ $subscriptionsView = (isset($_COOKIE['subscriptionsView']) && $_COOKIE['subscrip
     );
 
     $print = [];
+    $priceHistoryIndex = load_price_history_index($db, (int) $userId);
     foreach ($subscriptions as $subscription) {
       if ($subscription['inactive'] == 1 && isset($settings['hideDisabledSubscriptions']) && $settings['hideDisabledSubscriptions'] === 'true') {
         continue;
@@ -240,7 +242,9 @@ $subscriptionsView = (isset($_COOKIE['subscriptionsView']) && $_COOKIE['subscrip
       $print[$id]['payment_method_id'] = $paymentMethodId;
       $print[$id]['category_id'] = $subscription['category_id'];
       $print[$id]['payer_user_id'] = $subscription['payer_user_id'];
-      $print[$id]['price'] = floatval($subscription['price']);
+      $hasVariablePrice = subscription_has_variable_price($subscription);
+      $print[$id]['price'] = effective_subscription_price($subscription, date('Y-m'), $priceHistoryIndex);
+      $print[$id]['has_variable_price'] = $hasVariablePrice ? 1 : 0;
       $print[$id]['progress'] = getSubscriptionProgress($cycle, $frequency, $subscription['next_payment']);
       $print[$id]['inactive'] = $subscription['inactive'];
       $print[$id]['url'] = $subscription['url'];
@@ -251,7 +255,7 @@ $subscriptionsView = (isset($_COOKIE['subscriptionsView']) && $_COOKIE['subscrip
         $print[$id]['price'] = getPriceConverted($print[$id]['price'], $currencyId, $db);
         $print[$id]['currency_code'] = $currencies[$mainCurrencyId]['code'];
       }
-      if (isset($settings['showMonthlyPrice']) && $settings['showMonthlyPrice'] === 'true') {
+      if (isset($settings['showMonthlyPrice']) && $settings['showMonthlyPrice'] === 'true' && !$hasVariablePrice) {
         $print[$id]['price'] = getPricePerMonth($cycle, $frequency, $print[$id]['price']);
       }
       if (isset($settings['showOriginalPrice']) && $settings['showOriginalPrice'] === 'true') {
@@ -366,6 +370,27 @@ $subscriptionsView = (isset($_COOKIE['subscriptionsView']) && $_COOKIE['subscrip
         }
         ?>
       </select>
+    </div>
+
+    <div class="form-group">
+      <div class="inline grow">
+        <input type="checkbox" id="has_variable_price" name="has_variable_price"
+          onchange="togglePriceHistorySection()">
+        <label for="has_variable_price" class="grow"><?= translate('variable_price', $i18n) ?></label>
+      </div>
+      <div id="price-history-section" class="price-history-section" style="display:none;"
+        data-amount-placeholder="<?= translate('price_history_amount', $i18n) ?>"
+        data-note-placeholder="<?= translate('price_history_note', $i18n) ?>"
+        data-remove-label="<?= translate('price_history_remove', $i18n) ?>">
+        <p class="price-history-hint"><?= translate('variable_price_hint', $i18n) ?></p>
+        <label><?= translate('price_history_label', $i18n) ?></label>
+        <input type="hidden" id="price_history" name="price_history" value="[]">
+        <div id="price-history-rows"></div>
+        <button type="button" class="button secondary-button thin" onclick="addPriceHistoryRow()">
+          <i class="fa-solid fa-circle-plus"></i>
+          <?= translate('price_history_add', $i18n) ?>
+        </button>
+      </div>
     </div>
 
     <div class="form-group">

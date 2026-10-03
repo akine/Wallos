@@ -7,6 +7,7 @@ require_once '../../includes/getsettings.php';
 require_once '../../includes/ssrf_helper.php';
 require_once '../../includes/logo_theme_variant.php';
 require_once '../../includes/logo_cleanup.php';
+require_once '../../includes/variable_pricing.php';
 
 if (!file_exists('../../images/uploads/logos')) {
     mkdir('../../images/uploads/logos', 0777, true);
@@ -235,6 +236,8 @@ function resizeAndUploadLogo($uploadedFile, $uploadDir, $name, $settings)
 $isEdit = isset($_POST['id']) && $_POST['id'] != "";
 $name = validate($_POST["name"]);
 $price = $_POST['price'];
+$hasVariablePrice = isset($_POST['has_variable_price']) ? 1 : 0;
+$priceHistoryJson = $_POST['price_history'] ?? '';
 $currencyId = $_POST["currency_id"];
 $frequency = $_POST["frequency"];
 $cycle = $_POST["cycle"];
@@ -376,12 +379,12 @@ if (!$isEdit) {
                         name, logo, price, currency_id, next_payment, cycle, frequency, notes,
                         payment_method_id, payer_user_id, category_id, notify, inactive, url,
                         notify_days_before, user_id, cancellation_date, replacement_subscription_id,
-                        auto_renew, start_date, logo_text_color, logo_variant
+                        auto_renew, start_date, logo_text_color, logo_variant, has_variable_price
                     ) VALUES (
                         :name, :logo, :price, :currencyId, :nextPayment, :cycle, :frequency, :notes,
                         :paymentMethodId, :payerUserId, :categoryId, :notify, :inactive, :url,
                         :notifyDaysBefore, :userId, :cancellationDate, :replacement_subscription_id,
-                        :autoRenew, :startDate, :logoTextColor, :logoVariant
+                        :autoRenew, :startDate, :logoTextColor, :logoVariant, :hasVariablePrice
                     )";
 } else {
     $id = $_POST['id'];
@@ -419,7 +422,8 @@ if (!$isEdit) {
                         url = :url, 
                         notify_days_before = :notifyDaysBefore, 
                         cancellation_date = :cancellationDate, 
-                        replacement_subscription_id = :replacement_subscription_id";
+                        replacement_subscription_id = :replacement_subscription_id,
+                        has_variable_price = :hasVariablePrice";
 
     if ($logo != "") {
         $sql .= ", logo = :logo, logo_text_color = :logoTextColor, logo_variant = :logoVariant";
@@ -456,8 +460,27 @@ if ($isEdit) {
 }
 $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
 $stmt->bindParam(':replacement_subscription_id', $replacementSubscriptionId, SQLITE3_INTEGER);
+$stmt->bindParam(':hasVariablePrice', $hasVariablePrice, SQLITE3_INTEGER);
 
 if ($stmt->execute()) {
+    if ($hasVariablePrice === 1) {
+        $subscriptionId = $isEdit ? (int) $id : (int) $db->lastInsertRowID();
+        $ownsSubscription = false;
+        $ownerStmt = $db->prepare('SELECT id FROM subscriptions WHERE id = :id AND user_id = :userId');
+        if ($ownerStmt) {
+            $ownerStmt->bindValue(':id', $subscriptionId, SQLITE3_INTEGER);
+            $ownerStmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+            $ownerResult = $ownerStmt->execute();
+            $ownsSubscription = $ownerResult && $ownerResult->fetchArray(SQLITE3_ASSOC);
+        }
+        if ($ownsSubscription) {
+            $entries = parse_price_history_json($priceHistoryJson);
+            if ($entries !== null) {
+                replace_subscription_price_history($db, $subscriptionId, $entries);
+            }
+        }
+    }
+
     $success['status'] = "Success";
     $text = $isEdit ? "updated" : "added";
     $success['message'] = translate('subscription_' . $text . '_successfuly', $i18n);

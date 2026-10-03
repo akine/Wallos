@@ -39,6 +39,12 @@ function resetForm() {
   replacementSubscription.classList.add("hide");
   const form = document.querySelector("#subs-form");
   form.reset();
+  clearPriceHistoryRows();
+  const hasVariablePrice = document.querySelector("#has_variable_price");
+  if (hasVariablePrice) {
+    hasVariablePrice.checked = false;
+  }
+  togglePriceHistorySection();
   toggleOneTimeCycleUI(false);
   closeLogoSearch();
   const deleteButton = document.querySelector("#deletesub");
@@ -132,6 +138,16 @@ function fillEditFormFields(subscription) {
   const deleteButton = document.querySelector("#deletesub");
   deleteButton.style = 'display: block';
   deleteButton.setAttribute("onClick", `deleteSubscription(event, ${subscription.id})`);
+
+  const hasVariablePrice = document.querySelector("#has_variable_price");
+  if (hasVariablePrice) {
+    hasVariablePrice.checked = !!subscription.has_variable_price;
+  }
+  clearPriceHistoryRows();
+  if (Array.isArray(subscription.price_history)) {
+    subscription.price_history.forEach(entry => addPriceHistoryRow(entry));
+  }
+  togglePriceHistorySection();
 
   const modal = document.getElementById('subscription-form');
   modal.classList.add("is-open");
@@ -711,6 +727,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     submitButton.disabled = true;
 
+    syncPriceHistoryHiddenField();
+
     const cycleVal = document.querySelector("#cycle")?.value;
     if (cycleVal === "5") {
       const freq = document.querySelector("#frequency");
@@ -1254,3 +1272,89 @@ window.addEventListener('load', () => {
     swipeHintAnimation();
   }
 });
+
+function togglePriceHistorySection() {
+  const checkbox = document.querySelector("#has_variable_price");
+  const section = document.querySelector("#price-history-section");
+  if (!checkbox || !section) {
+    return;
+  }
+  section.style.display = checkbox.checked ? "block" : "none";
+}
+
+function clearPriceHistoryRows() {
+  const container = document.querySelector("#price-history-rows");
+  if (container) {
+    container.replaceChildren();
+  }
+  const hidden = document.querySelector("#price_history");
+  if (hidden) {
+    hidden.value = "[]";
+  }
+}
+
+function addPriceHistoryRow(entry) {
+  const container = document.querySelector("#price-history-rows");
+  const section = document.querySelector("#price-history-section");
+  if (!container || !section) {
+    return;
+  }
+
+  const period = document.createElement("input");
+  period.type = "month";
+  period.className = "price-history-period";
+  period.value = entry && entry.period ? entry.period : new Date().toISOString().slice(0, 7);
+
+  const price = document.createElement("input");
+  price.type = "number";
+  price.step = "0.01";
+  price.className = "price-history-price";
+  price.placeholder = section.dataset.amountPlaceholder || "";
+  price.value = entry && entry.price !== undefined && entry.price !== null ? entry.price : "";
+
+  const note = document.createElement("input");
+  note.type = "text";
+  note.className = "price-history-note";
+  note.placeholder = section.dataset.notePlaceholder || "";
+  note.value = entry && entry.note ? entry.note : "";
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "image-button medium";
+  remove.title = section.dataset.removeLabel || "";
+  remove.addEventListener("click", function () {
+    row.remove();
+  });
+  const icon = document.createElement("i");
+  icon.className = "fa-solid fa-xmark";
+  remove.appendChild(icon);
+
+  const row = document.createElement("div");
+  row.className = "price-history-row";
+  row.append(period, price, note, remove);
+  container.appendChild(row);
+}
+
+function syncPriceHistoryHiddenField() {
+  const hidden = document.querySelector("#price_history");
+  if (!hidden) {
+    return;
+  }
+  const checkbox = document.querySelector("#has_variable_price");
+  if (!checkbox || !checkbox.checked) {
+    hidden.value = "[]";
+    return;
+  }
+  const rows = document.querySelectorAll("#price-history-rows .price-history-row");
+  const byPeriod = {};
+  rows.forEach(row => {
+    const period = row.querySelector(".price-history-period")?.value || "";
+    const priceStr = row.querySelector(".price-history-price")?.value || "";
+    const note = row.querySelector(".price-history-note")?.value || "";
+    if (!/^\d{4}-\d{2}$/.test(period) || priceStr === "") {
+      return;
+    }
+    byPeriod[period] = { period, price: parseFloat(priceStr), note };
+  });
+  hidden.value = JSON.stringify(Object.keys(byPeriod).sort().map(period => byPeriod[period]));
+}
