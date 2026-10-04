@@ -12,7 +12,7 @@ It returns a JSON object with the following properties:
 - subscription: an object containing the subscription details.
 - notes: warning messages or additional information (array).
 
-`price` stays the stored base price. `effective_price` is the current month's amount used by totals (see get_subscriptions.php). `price_history` is the list of monthly actuals in the subscription currency, each `{period, price, note}`.
+`price` stays the stored base price. `effective_price` is the current month's amount used by totals (see get_subscriptions.php; missing months use the latest earlier actual, then the base price). `price_history` is the list of monthly actuals in the subscription currency, each `{period, price, note}`.
 
 Example response:
 {

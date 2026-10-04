@@ -204,7 +204,8 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     $print[$id]['category_id'] = $subscription['category_id'];
     $print[$id]['payer_user_id'] = $subscription['payer_user_id'];
     $hasVariablePrice = subscription_has_variable_price($subscription);
-    $print[$id]['price'] = effective_subscription_price($subscription, date('Y-m'), $priceHistoryIndex);
+    $effectivePrice = effective_subscription_price($subscription, date('Y-m'), $priceHistoryIndex);
+    $print[$id]['price'] = $effectivePrice;
     $print[$id]['has_variable_price'] = $hasVariablePrice ? 1 : 0;
     $print[$id]['progress'] = getSubscriptionProgress($cycle, $frequency, $subscription['next_payment']);
     $print[$id]['inactive'] = $subscription['inactive'];
@@ -220,7 +221,7 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
       $print[$id]['price'] = getPricePerMonth($cycle, $frequency, $print[$id]['price']);
     }
     if (isset($settings['showOriginalPrice']) && $settings['showOriginalPrice'] === 'true') {
-      $print[$id]['original_price'] = floatval($subscription['price']);
+      $print[$id]['original_price'] = $effectivePrice;
       $print[$id]['original_currency_code'] = $currencies[$subscription['currency_id']]['code'];
     }
   }

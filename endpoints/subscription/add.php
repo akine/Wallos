@@ -258,6 +258,18 @@ $inactive = isset($_POST['inactive']) ? true : false;
 $cancellationDate = $_POST['cancellation_date'] ?? null;
 $replacementSubscriptionId = $_POST['replacement_subscription_id'];
 
+$historyEntries = null;
+try {
+    if ($hasVariablePrice === 1) {
+        if (!variable_pricing_supports_cycle($cycle, $frequency)) {
+            throw new InvalidArgumentException('variable_price_monthly_only');
+        }
+        $historyEntries = parse_price_history_json($priceHistoryJson);
+    }
+} catch (InvalidArgumentException $error) {
+    rejectSubscriptionInput(translate($error->getMessage(), $i18n));
+}
+
 if ($replacementSubscriptionId == 0 || $inactive == 0) {
     $replacementSubscriptionId = null;
 }
@@ -276,7 +288,7 @@ if ($replacementSubscriptionId !== null) {
 // subscription can't be attached to another tenant's currency/category/
 // household member/payment method (IDs are global auto-increment integers
 // and easily enumerable).
-function rejectForeignId($message)
+function rejectSubscriptionInput($message)
 {
     header('Content-Type: application/json');
     echo json_encode(['status' => 'Error', 'message' => $message]);
@@ -288,7 +300,7 @@ $currStmt->bindParam(':id', $currencyId, SQLITE3_INTEGER);
 $currStmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
 $currResult = $currStmt->execute();
 if (!$currResult || !$currResult->fetchArray()) {
-    rejectForeignId('The specified currency does not exist or does not belong to you.');
+    rejectSubscriptionInput('The specified currency does not exist or does not belong to you.');
 }
 
 if ($categoryId !== null && $categoryId !== '') {
@@ -297,7 +309,7 @@ if ($categoryId !== null && $categoryId !== '') {
     $catStmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
     $catResult = $catStmt->execute();
     if (!$catResult || !$catResult->fetchArray()) {
-        rejectForeignId('The specified category does not exist or does not belong to you.');
+        rejectSubscriptionInput('The specified category does not exist or does not belong to you.');
     }
 }
 
@@ -307,7 +319,7 @@ if ($payerUserId !== null && $payerUserId !== '') {
     $payerStmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
     $payerResult = $payerStmt->execute();
     if (!$payerResult || !$payerResult->fetchArray()) {
-        rejectForeignId('The specified household member does not exist or does not belong to you.');
+        rejectSubscriptionInput('The specified household member does not exist or does not belong to you.');
     }
 }
 
@@ -317,7 +329,7 @@ if ($paymentMethodId !== null && $paymentMethodId !== '') {
     $pmStmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
     $pmResult = $pmStmt->execute();
     if (!$pmResult || !$pmResult->fetchArray()) {
-        rejectForeignId('The specified payment method does not exist or does not belong to you.');
+        rejectSubscriptionInput('The specified payment method does not exist or does not belong to you.');
     }
 }
 
@@ -462,25 +474,15 @@ $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
 $stmt->bindParam(':replacement_subscription_id', $replacementSubscriptionId, SQLITE3_INTEGER);
 $stmt->bindParam(':hasVariablePrice', $hasVariablePrice, SQLITE3_INTEGER);
 
-if ($stmt->execute()) {
-    if ($hasVariablePrice === 1) {
-        $subscriptionId = $isEdit ? (int) $id : (int) $db->lastInsertRowID();
-        $ownsSubscription = false;
-        $ownerStmt = $db->prepare('SELECT id FROM subscriptions WHERE id = :id AND user_id = :userId');
-        if ($ownerStmt) {
-            $ownerStmt->bindValue(':id', $subscriptionId, SQLITE3_INTEGER);
-            $ownerStmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
-            $ownerResult = $ownerStmt->execute();
-            $ownsSubscription = $ownerResult && $ownerResult->fetchArray(SQLITE3_ASSOC);
-        }
-        if ($ownsSubscription) {
-            $entries = parse_price_history_json($priceHistoryJson);
-            if ($entries !== null) {
-                replace_subscription_price_history($db, $subscriptionId, $entries);
-            }
-        }
-    }
+try {
+    $savedId = save_subscription_with_price_history(
+        $db, $stmt, (int) $userId, $isEdit ? (int) $id : null, $historyEntries
+    );
+} catch (InvalidArgumentException $error) {
+    rejectSubscriptionInput(translate($error->getMessage(), $i18n));
+}
 
+if ($savedId !== null) {
     $success['status'] = "Success";
     $text = $isEdit ? "updated" : "added";
     $success['message'] = translate('subscription_' . $text . '_successfuly', $i18n);
@@ -502,7 +504,8 @@ if ($stmt->execute()) {
     echo json_encode($success);
     exit();
 } else {
-    echo translate('error', $i18n) . ": " . $db->lastErrorMsg();
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'Error', 'message' => translate('error', $i18n)]);
 }
 $db->close();
 ?>

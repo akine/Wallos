@@ -44,15 +44,17 @@ $cloneStmt->bindValue(':cancellation_date', $subscriptionToClone['cancellation_d
 $cloneStmt->bindValue(':replacement_subscription_id', $subscriptionToClone['replacement_subscription_id'], SQLITE3_INTEGER);
 $cloneStmt->bindValue(':has_variable_price', !empty($subscriptionToClone['has_variable_price']) ? 1 : 0, SQLITE3_INTEGER);
 
-if ($cloneStmt->execute()) {
-    $clonedId = (int) $db->lastInsertRowID();
-    $copyHistory = $db->prepare('INSERT INTO subscription_price_history (subscription_id, period, price, note)
-        SELECT :newId, period, price, note FROM subscription_price_history WHERE subscription_id = :oldId');
-    if ($copyHistory) {
-        $copyHistory->bindValue(':newId', $clonedId, SQLITE3_INTEGER);
-        $copyHistory->bindValue(':oldId', (int) $subscriptionId, SQLITE3_INTEGER);
-        $copyHistory->execute();
-    }
+try {
+    $clonedId = save_subscription_with_price_history(
+        $db, $cloneStmt, (int) $userId, null,
+        price_history_for_subscription($db, (int) $subscriptionId)
+    );
+} catch (InvalidArgumentException $error) {
+    $db->close();
+    die(json_encode(['success' => false, 'message' => translate($error->getMessage(), $i18n)]));
+}
+
+if ($clonedId !== null) {
     $response = [
         "success" => true,
         "message" => translate('success', $i18n),
@@ -60,10 +62,10 @@ if ($cloneStmt->execute()) {
     ];
     echo json_encode($response);
 } else {
-    die(json_encode([
+    echo json_encode([
         "success" => false,
         "message" => translate("error", $i18n)
-    ]));
+    ]);
 }
 
 $db->close();
